@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <memory.h>
 #include <netdb.h>
 #include <poll.h>
 #include <stdlib.h>
@@ -38,36 +39,46 @@
 typedef struct {
   uint8_t key[crypto_box_PUBLICKEYBYTES];
   uint8_t nonce[crypto_box_NONCEBYTES];
-  uint8_t message[64 + crypto_box_BOXZEROBYTES];
+  uint8_t text[64 + crypto_box_BOXZEROBYTES];
 } message_t;
 
 typedef struct {
   uint8_t zeros[crypto_box_ZEROBYTES];
   uint8_t text[64];
-} text_t;
+} plain_t;
 
-#define keysize crypto_box_PUBLICKEYBYTES + crypto_box_SECRETKEYBYTES
+typedef struct {
+  uint8_t zeros[crypto_box_BOXZEROBYTES];
+  uint8_t text[64 + crypto_box_BOXZEROBYTES];
+} secret_t;
+
+typedef struct {
+  uint8_t pk[crypto_box_PUBLICKEYBYTES];
+  uint8_t sk[crypto_box_SECRETKEYBYTES];
+} keypair_t;
+
+
 #define fail(msg) {   \
   perror(msg);        \
   exit(EXIT_FAILURE); \
 }
 int main(int argc, char **argv) {
-  uint8_t key[keysize] = {0};
+  keypair_t key = {0};
   int fd = open("server.key", O_RDONLY);
   // read server.key or create it
   if(fd == -1) {
     if(errno == ENOENT) {
       fd = open("server.key", O_WRONLY | O_CREAT);
       if(fd == -1) fail("could not create server.key");
-      crypto_box_keypair(key, key + crypto_box_PUBLICKEYBYTES);
-      write(fd, key, keysize);
+      crypto_box_keypair(key.pk, key.sk);
+      write(fd, &key, sizeof(key));
       fsync(fd);
     } else {
       fail("error reading server.key");
     }
   } else {
-    ssize_t rd = read(fd, key, keysize);
-    if(rd != keysize) fail("could not read server.key");
+    ssize_t rd = read(fd, &key, sizeof(key));
+    if(rd != sizeof(key)) fail("could not read server.key");
   }
   close(fd);
 
@@ -116,11 +127,17 @@ int main(int argc, char **argv) {
       if(read != sizeof(mess)) {
         continue;
       }
-
-      // TK decrypt and reply
+      secret_t secret = {0};
+      memcpy(secret.text + crypto_box_BOXZEROBYTES,
+             mess.text, sizeof(secret.text));
+      plain_t plain = {0};
+      int ret = crypto_box_open((uint8_t *)&plain, (uint8_t*) &secret,
+                                sizeof(secret), mess.nonce, mess.key, key.sk);
+      if(ret == -1) continue;
+      //
     }
   }
-
+  memset(&key, 0, sizeof(key));
   close(sock);
   return 0;
 }
