@@ -12,7 +12,7 @@
 
 #include "vendor/tweetnacl.h"
 
-static int fd;
+static int fd = -1;
 void randombytes(uint8_t *x, uint32_t xlen) {
   int i;
   if(fd == -1) {
@@ -90,30 +90,31 @@ typedef struct {
 
 int main(int argc, char **argv) {
   keypair_t key = {0};
-  int fd = open("server.key", O_RDONLY);
+  int kfd = open("server.key", O_RDONLY);
   // read server.key or create it
-  if(fd == -1) {
+  if(kfd == -1) {
     if(errno == ENOENT) {
-      fd = open("server.key", O_WRONLY | O_CREAT);
-      if(fd == -1) fail("could not create server.key");
+      kfd = open("server.key", O_WRONLY | O_CREAT | O_SYNC, S_IRUSR | S_IWUSR);
+      if(kfd == -1) fail("could not create server.key");
       crypto_box_keypair(key.pk, key.sk);
-      write(fd, &key, sizeof(key));
-      fsync(fd);
+      ssize_t rd = write(kfd, &key, sizeof(key));
+      if(rd != sizeof(key)) fail("could not write to server.key");
+      puts("writing file.");
     } else {
       fail("error reading server.key");
     }
   } else {
-    ssize_t rd = read(fd, &key, sizeof(key));
+    ssize_t rd = read(kfd, &key, sizeof(key));
     if(rd != sizeof(key)) fail("could not read server.key");
   }
-  close(fd);
+  close(kfd);
 
   struct addrinfo hints = {0}, *res;
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags = AI_PASSIVE;
   hints.ai_protocol = IPPROTO_UDP;
-  char *port = "443";
+  char *port = "10000";
 
   int status = getaddrinfo(NULL, port, &hints, &res);
   if(status != 0) {
@@ -121,7 +122,7 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-  int sock;
+  int sock = -1;
   for(struct addrinfo *p = res; p != NULL; p = p->ai_next) {
     sock = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
     if(sock == -1) continue;
@@ -130,9 +131,11 @@ int main(int argc, char **argv) {
       fail("setsockopt");
     if(bind(sock, p->ai_addr, p->ai_addrlen) == -1) {
       close(sock);
+      sock = -1;
       continue;
     }
   }
+  if(sock == -1) fail("could not get a socket");
 
   freeaddrinfo(res);
   struct pollfd ready = {
