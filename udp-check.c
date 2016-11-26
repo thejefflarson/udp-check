@@ -12,6 +12,32 @@
 
 #include "vendor/tweetnacl.h"
 
+static int fd;
+void randombytes(uint8_t *x, uint32_t xlen) {
+  int i;
+  if(fd == -1) {
+    for(;;) {
+      fd = open("/dev/urandom", O_RDONLY);
+      if (fd != -1) break;
+
+      sleep(1);
+    }
+  }
+
+  while(xlen > 0) {
+    if(xlen < 1048576) i = xlen; else i = 1048576;
+
+    i = read(fd,x,i);
+    if(i < 1) {
+      sleep(1);
+      continue;
+    }
+
+    x += i;
+    xlen -= i;
+  }
+}
+
 // This utility does one thing and one thing well.
 
 // It reads a curve25519 key generated from a file in the current directory
@@ -57,11 +83,11 @@ typedef struct {
   uint8_t sk[crypto_box_SECRETKEYBYTES];
 } keypair_t;
 
-
 #define fail(msg) {   \
   perror(msg);        \
   exit(EXIT_FAILURE); \
 }
+
 int main(int argc, char **argv) {
   keypair_t key = {0};
   int fd = open("server.key", O_RDONLY);
@@ -117,7 +143,7 @@ int main(int argc, char **argv) {
 
   while(1) {
     int num = poll(&ready, 1, 1000);
-    if(num == -1) fail("poll returned an error.");
+    if(num == -1) perror("poll returned an error.");
     if(num == 1) {
       struct sockaddr_storage addr;
       socklen_t size = sizeof(addr);
@@ -134,7 +160,16 @@ int main(int argc, char **argv) {
       int ret = crypto_box_open((uint8_t *)&plain, (uint8_t*) &secret,
                                 sizeof(secret), mess.nonce, mess.key, key.sk);
       if(ret == -1) continue;
-      //
+      memset(&secret, 0, sizeof(secret));
+      memset(&mess, 0, sizeof(mess));
+      memcpy(mess.key, key.pk, sizeof(mess.key));
+      randombytes(mess.nonce, sizeof(mess.nonce));
+      ret = crypto_box((uint8_t*) &secret, (uint8_t*) &plain,
+                       sizeof(secret), mess.nonce, mess.key, key.sk);
+      if(ret == -1) continue;
+      memcpy(mess.text + crypto_box_BOXZEROBYTES, secret.text,
+             sizeof(secret.text));
+      sendto(sock, &mess, sizeof(mess), 0, (struct sockaddr*)&addr, size);
     }
   }
   memset(&key, 0, sizeof(key));
