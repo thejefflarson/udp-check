@@ -136,8 +136,8 @@ int main(int argc, char **argv) {
     }
   }
   if(sock == -1) fail("could not get a socket");
-
   freeaddrinfo(res);
+
   struct pollfd ready = {
     .fd = sock,
     .events = POLLIN,
@@ -153,7 +153,10 @@ int main(int argc, char **argv) {
       message_t mess = {0};
       ssize_t read = recvfrom(sock, &mess, sizeof(mess), 0,
                               (struct sockaddr *)&addr, &size);
+
       if(read != sizeof(mess)) {
+        fprintf(stderr, "Packet too short.\n");
+        fflush(stderr);
         continue;
       }
       secret_t secret = {0};
