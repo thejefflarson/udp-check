@@ -85,9 +85,10 @@ typedef struct {
   uint8_t sk[crypto_box_SECRETKEYBYTES];
 } keypair_t;
 
-#define fail(msg) {   \
-  perror(msg);        \
-  exit(EXIT_FAILURE); \
+#define fail(msg) {      \
+  syslog(LOG_CRIT, msg); \
+  perror(msg);           \
+  exit(EXIT_FAILURE);    \
 }
 
 // from beej
@@ -140,6 +141,7 @@ int main(int argc, char **argv) {
 
   int status = getaddrinfo(NULL, port, &hints, &res);
   if(status != 0) {
+    syslog(LOG_CRIT, "getaddrinfo: %s\n", gai_strerror(status));
     fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
     exit(EXIT_FAILURE);
   }
