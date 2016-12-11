@@ -1,3 +1,4 @@
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <memory.h>
@@ -5,6 +6,7 @@
 #include <poll.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <syslog.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -88,6 +90,26 @@ typedef struct {
   exit(EXIT_FAILURE); \
 }
 
+// from beej
+static void log_warn(const struct sockaddr_storage *sa,
+                     const char *logline) {
+  char s[INET6_ADDRSTRLEN] = {0};
+  switch(((const struct sockaddr *)sa)->sa_family) {
+  case AF_INET:
+    inet_ntop(AF_INET, &(((struct sockaddr_in *)sa)->sin_addr),
+              s, INET6_ADDRSTRLEN);
+    break;
+  case AF_INET6:
+    inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)sa)->sin6_addr),
+              s, INET6_ADDRSTRLEN);
+    break;
+  default:
+    strncpy(s, "Unknown AF", INET6_ADDRSTRLEN);
+
+  }
+  syslog(LOG_WARNING, "[%s] %s", s, logline);
+}
+
 int main(int argc, char **argv) {
   keypair_t key = {0};
   int kfd = open("server.key", O_RDONLY);
@@ -114,7 +136,7 @@ int main(int argc, char **argv) {
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_flags = AI_PASSIVE;
   hints.ai_protocol = IPPROTO_UDP;
-  char *port = "10000";
+  const char *port = "10000";
 
   int status = getaddrinfo(NULL, port, &hints, &res);
   if(status != 0) {
@@ -143,6 +165,7 @@ int main(int argc, char **argv) {
     .events = POLLIN,
     .revents = 0
   };
+  syslog(LOG_INFO, "Started listening on %s", port);
 
   while(1) {
     int num = poll(&ready, 1, 1000);
@@ -155,8 +178,7 @@ int main(int argc, char **argv) {
                               (struct sockaddr *)&addr, &size);
 
       if(read != sizeof(mess)) {
-        fprintf(stderr, "Packet too short.\n");
-        fflush(stderr);
+        log_warn(&addr, "Packet too short.");
         continue;
       }
       secret_t secret = {0};
@@ -165,14 +187,20 @@ int main(int argc, char **argv) {
       plain_t plain = {0};
       int ret = crypto_box_open((uint8_t *)&plain, (uint8_t*) &secret,
                                 sizeof(secret), mess.nonce, mess.key, key.sk);
-      if(ret == -1) continue;
+      if(ret == -1) {
+        log_warn(&addr, "Failed decryption.");
+        continue;
+      }
       memset(&secret, 0, sizeof(secret));
       memset(&mess, 0, sizeof(mess));
       memcpy(mess.key, key.pk, sizeof(mess.key));
       randombytes(mess.nonce, sizeof(mess.nonce));
       ret = crypto_box((uint8_t*) &secret, (uint8_t*) &plain,
                        sizeof(secret), mess.nonce, mess.key, key.sk);
-      if(ret == -1) continue;
+      if(ret == -1) {
+        log_warn(&addr, "Failed encryption (Should never happen!).");
+        continue;
+      }
       memcpy(mess.text + crypto_box_BOXZEROBYTES, secret.text,
              sizeof(secret.text));
       sendto(sock, &mess, sizeof(mess), 0, (struct sockaddr*)&addr, size);
