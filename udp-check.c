@@ -162,52 +162,42 @@ int main(int argc, char **argv) {
   }
   if(sock == -1) fail("could not get a socket");
   freeaddrinfo(res);
-
-  struct pollfd ready = {
-    .fd = sock,
-    .events = POLLIN,
-    .revents = 0
-  };
   syslog(LOG_INFO, "Started listening on %s", port);
 
   while(1) {
-    int num = poll(&ready, 1, 1000);
-    if(num == -1) perror("poll returned an error.");
-    if(num == 1) {
-      struct sockaddr_storage addr;
-      socklen_t size = sizeof(addr);
-      message_t mess = {0};
-      ssize_t read = recvfrom(sock, &mess, sizeof(mess), 0,
-                              (struct sockaddr *)&addr, &size);
-      syslog(LOG_INFO, "Recieved a packet");
-      if(read != sizeof(mess)) {
-        log_warn(&addr, "Packet too short.");
-        continue;
-      }
-
-      secret_t secret = {0};
-      memcpy(secret.text, mess.text, sizeof(mess.text));
-      plain_t plain = {0};
-      int ret = crypto_box_open((uint8_t *)&plain, (uint8_t*) &secret,
-                                sizeof(secret), mess.nonce, mess.key, key.sk);
-      if(ret == -1) {
-        log_warn(&addr, "Failed decryption.");
-        continue;
-      }
-      memset(&secret, 0, sizeof(secret));
-      memset(&mess, 0, sizeof(mess));
-      memcpy(mess.key, key.pk, sizeof(mess.key));
-      randombytes(mess.nonce, sizeof(mess.nonce));
-      ret = crypto_box((uint8_t*) &secret, (uint8_t*) &plain,
-                       sizeof(secret), mess.nonce, mess.key, key.sk);
-      if(ret == -1) {
-        log_warn(&addr, "Failed encryption (Should never happen!).");
-        continue;
-      }
-      memcpy(mess.text + crypto_box_BOXZEROBYTES, secret.text,
-             sizeof(secret.text));
-      sendto(sock, &mess, sizeof(mess), 0, (struct sockaddr*)&addr, size);
+    struct sockaddr_storage addr;
+    socklen_t size = sizeof(addr);
+    message_t mess = {0};
+    ssize_t read = recvfrom(sock, &mess, sizeof(mess), 0,
+                            (struct sockaddr *)&addr, &size);
+    syslog(LOG_INFO, "Recieved a packet");
+    if(read != sizeof(mess)) {
+      log_warn(&addr, "Packet too short.");
+      continue;
     }
+
+    secret_t secret = {0};
+    memcpy(secret.text, mess.text, sizeof(mess.text));
+    plain_t plain = {0};
+    int ret = crypto_box_open((uint8_t *)&plain, (uint8_t*) &secret,
+                              sizeof(secret), mess.nonce, mess.key, key.sk);
+    if(ret == -1) {
+      log_warn(&addr, "Failed decryption.");
+      continue;
+    }
+    memset(&secret, 0, sizeof(secret));
+    memset(&mess, 0, sizeof(mess));
+    memcpy(mess.key, key.pk, sizeof(mess.key));
+    randombytes(mess.nonce, sizeof(mess.nonce));
+    ret = crypto_box((uint8_t*) &secret, (uint8_t*) &plain,
+                     sizeof(secret), mess.nonce, mess.key, key.sk);
+    if(ret == -1) {
+      log_warn(&addr, "Failed encryption (Should never happen!).");
+      continue;
+    }
+    memcpy(mess.text + crypto_box_BOXZEROBYTES, secret.text,
+           sizeof(secret.text));
+    sendto(sock, &mess, sizeof(mess), 0, (struct sockaddr*)&addr, size);
   }
   memset(&key, 0, sizeof(key));
   close(sock);
