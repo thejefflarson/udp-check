@@ -158,6 +158,7 @@ int main(int argc, char **argv) {
       sock = -1;
       continue;
     }
+    break;
   }
   if(sock == -1) fail("could not get a socket");
   freeaddrinfo(res);
@@ -178,14 +179,14 @@ int main(int argc, char **argv) {
       message_t mess = {0};
       ssize_t read = recvfrom(sock, &mess, sizeof(mess), 0,
                               (struct sockaddr *)&addr, &size);
-
+      syslog(LOG_INFO, "Recieved a packet");
       if(read != sizeof(mess)) {
         log_warn(&addr, "Packet too short.");
         continue;
       }
+
       secret_t secret = {0};
-      memcpy(secret.text + crypto_box_BOXZEROBYTES,
-             mess.text, sizeof(secret.text));
+      memcpy(secret.text, mess.text, sizeof(mess.text));
       plain_t plain = {0};
       int ret = crypto_box_open((uint8_t *)&plain, (uint8_t*) &secret,
                                 sizeof(secret), mess.nonce, mess.key, key.sk);
