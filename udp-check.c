@@ -15,7 +15,7 @@
 #include "vendor/tweetnacl.h"
 
 static int fd = -1;
-void randombytes(uint8_t *x, uint32_t xlen) {
+void randombytes(uint8_t *x, uint64_t xlen) {
   int i;
   if(fd == -1) {
     for(;;) {
