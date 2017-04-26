@@ -170,7 +170,7 @@ int main(int argc, char **argv) {
     message_t mess = {0};
     ssize_t read = recvfrom(sock, &mess, sizeof(mess), 0,
                             (struct sockaddr *)&addr, &size);
-    syslog(LOG_INFO, "Recieved a packet");
+    syslog(LOG_INFO, "Received a packet");
     if(read != sizeof(mess)) {
       log_warn(&addr, "Packet too short.");
       continue;
