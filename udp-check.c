@@ -167,7 +167,7 @@ int main(int argc, char **argv) {
   while(1) {
     struct sockaddr_storage addr;
     socklen_t size = sizeof(addr);
-    message_t mess = {{0},{0},{0}};
+    message_t mess = {{0}, {0}, {0}};
     ssize_t read = recvfrom(sock, &mess, sizeof(mess), 0,
                             (struct sockaddr *)&addr, &size);
     syslog(LOG_INFO, "Recieved a packet");
@@ -176,9 +176,9 @@ int main(int argc, char **argv) {
       continue;
     }
 
-    secret_t secret = {{0},{0}};
+    secret_t secret = {{0}, {0}};
     memcpy(secret.text, mess.text, sizeof(mess.text));
-    plain_t plain = {{0},{0}};
+    plain_t plain = {{0}, {0}};
     int ret = crypto_box_open((uint8_t *)&plain, (uint8_t*) &secret,
                               sizeof(secret), mess.nonce, mess.key, key.sk);
     if(ret == -1) {
